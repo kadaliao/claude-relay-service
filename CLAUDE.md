@@ -24,6 +24,11 @@ Claude Relay Service 是一个功能完整的 AI API 中转服务，支持 Claud
 - **geminiAccountService.js**: Gemini账户管理，Google OAuth token刷新和账户选择
 - **apiKeyService.js**: API Key管理，验证、限流和使用统计
 - **oauthHelper.js**: OAuth工具，PKCE流程实现和代理支持
+- **bedrockRelayService.js**: AWS Bedrock Claude模型代理服务
+- **azureOpenaiRelayService.js**: Azure OpenAI代理服务
+- **openaiToClaude.js**: OpenAI API到Claude格式的转换服务
+- **unifiedClaudeScheduler.js**: Claude账户统一调度器，支持多种Claude源
+- **webhook-reporter**: 独立容器化的仪表盘报告服务，定时生成图表并发送webhook通知
 
 ### 认证和代理流程
 
@@ -53,14 +58,18 @@ npm run setup                  # 生成配置和管理员凭据
 npm run install:web           # 安装Web界面依赖
 
 # 开发和运行
-npm run dev                   # 开发模式（热重载）
-npm start                     # 生产模式
-npm test                      # 运行测试
-npm run lint                  # 代码检查
+npm run dev                   # 开发模式（热重载，自动lint）
+npm start                     # 生产模式（运行前自动lint）
+npm test                      # 运行测试（Jest + SuperTest）
+npm run lint                  # ESLint代码检查和自动修复
+npm run lint:check            # 仅检查不修复
+npm run format                # Prettier代码格式化
+npm run format:check          # 检查格式化状态
 
 # Docker部署
 docker-compose up -d          # 推荐方式
 docker-compose --profile monitoring up -d  # 包含监控
+docker-compose --profile webhook up -d     # 包含webhook报告服务
 
 # 服务管理
 npm run service:start:daemon  # 后台启动（推荐）
@@ -206,6 +215,7 @@ npm run setup  # 自动生成密钥并创建管理员账户
 - 前端主题管理：`web/admin-spa/src/stores/theme.js`
 - 前端组件：`web/admin-spa/src/components/` 目录
 - 前端页面：`web/admin-spa/src/views/` 目录
+- Webhook服务：`webhook-reporter/src/` 目录（独立容器）
 
 ### 重要架构决策
 
@@ -230,6 +240,128 @@ npm run setup  # 自动生成密钥并创建管理员账户
 - **优雅降级**: Redis 连接失败时的回退机制
 - **自动重试**: 指数退避重试策略和错误隔离
 - **资源清理**: 客户端断开时的自动清理机制
+
+## Webhook仪表盘报告服务
+
+### 独立容器架构
+
+webhook-reporter服务采用完全独立的容器架构：
+- **独立的Dockerfile**: 基于Debian镜像，内置Canvas图表生成依赖
+- **共享Redis**: 从主服务的Redis读取数据，不影响主服务
+- **多平台支持**: Slack、Discord、钉钉、企业微信等webhook平台
+- **定时调度**: 支持cron表达式的灵活定时发送
+
+### Webhook服务管理命令
+
+```bash
+# 构建webhook服务
+docker-compose build webhook-reporter
+
+# 启动包含webhook的完整堆栈
+docker-compose --profile webhook up -d
+
+# 单独管理webhook服务
+docker-compose up -d webhook-reporter
+docker-compose restart webhook-reporter
+docker-compose logs -f webhook-reporter
+
+# 手动发送报告
+docker-compose exec webhook-reporter node src/app.js --once
+
+# 测试webhook连接
+docker-compose exec webhook-reporter node src/app.js --test
+
+# 查看配置
+docker-compose exec webhook-reporter node src/app.js --config
+```
+
+### 环境变量配置
+
+```bash
+# webhook功能配置
+DASHBOARD_WEBHOOK_ENABLE=true
+DASHBOARD_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK
+DASHBOARD_WEBHOOK_TYPE=slack
+DASHBOARD_WEBHOOK_INTERVAL="0 */6 * * *"
+DASHBOARD_CHART_THEME=light
+DASHBOARD_TREND_DAYS=7
+DASHBOARD_TOP_API_KEYS=10
+
+# 新增：图表功能控制（可选，默认全部开启）
+DASHBOARD_CHART_API_KEY_USAGE=true     # API Key使用统计图表
+DASHBOARD_CHART_API_KEY_COST=true      # API Key费用分布图表
+DASHBOARD_CHART_API_KEY_ACTIVITY=true  # API Key活跃度趋势图表
+```
+
+### 图表功能说明
+
+webhook-reporter 现在支持更丰富的 API Key 数据可视化：
+
+#### 📊 基础图表
+- **系统概览图表**: 整体系统状态柱状图
+- **模型分布图表**: 各模型使用量饼图
+- **使用趋势图表**: 时间维度使用趋势线图
+
+#### 🔑 API Key 专项图表（新增）
+- **API Key 使用统计**: 各API Key的今日/总计使用对比，包含请求数、Token数和费用
+- **API Key 费用分布**: Top API Keys的费用占比饼图，直观展示成本分布
+- **API Key 活跃度趋势**: 过去7天各API Key的活跃度变化趋势
+
+#### 📈 图表特性
+- **多平台适配**: 支持 Slack、Discord、钉钉、企业微信等多种推送平台
+- **主题支持**: 支持明亮/暗黑主题，自动适配不同环境
+- **智能筛选**: 自动筛选 Top 使用的 API Keys，避免图表过于复杂
+- **费用集成**: 结合主服务的费用计算，提供准确的成本分析
+- **可选生成**: 通过环境变量灵活控制各类图表的生成
+
+### 多平台支持架构
+
+项目支持多种AI平台，具有统一的调度和路由机制：
+
+- **Claude平台**: 
+  - Claude Code OAuth (claudeRelayService)
+  - Claude Console (claudeConsoleRelayService)
+  - AWS Bedrock Claude (bedrockRelayService)
+- **OpenAI兼容**: 
+  - Azure OpenAI (azureOpenaiRelayService)
+  - 标准OpenAI (通过openaiToClaude转换)
+- **Google平台**: 
+  - Gemini API (geminiRelayService)
+- **统一调度器**: 
+  - unifiedClaudeScheduler: 多Claude源智能调度
+  - unifiedGeminiScheduler: Gemini账户调度
+  - unifiedOpenAIScheduler: OpenAI类服务调度
+
+### ESLint和Prettier配置
+
+项目使用严格的代码质量标准：
+
+```javascript
+// .eslintrc.cjs 主要规则
+- 'prettier/prettier': 'error'  // 强制Prettier格式化
+- 'no-unused-vars': 'error'     // 禁止未使用变量
+- 'prefer-const': 'error'       // 优先使用const
+- 'eqeqeq': ['error', 'always'] // 强制使用===
+- 'curly': ['error', 'all']     // 强制使用大括号
+
+// .prettierrc 格式化配置
+- semi: false                   # 不使用分号
+- singleQuote: true            # 使用单引号
+- printWidth: 100              # 行宽100字符
+- trailingComma: "none"        # 不使用尾随逗号
+```
+
+### Nodemon开发配置
+
+开发模式自动包含代码检查：
+```json
+{
+  "watch": ["src"],
+  "ext": "js,json",
+  "exec": "npm run lint && node src/app.js"
+}
+```
+每次文件变化时自动运行lint检查，确保代码质量。
 
 ## 项目特定注意事项
 
@@ -267,9 +399,45 @@ npm run cli admin create -- --username admin2
 npm run cli admin reset-password -- --username admin
 ```
 
+### 测试和质量检查命令
+
+```bash
+# ESLint配置检查和格式化
+npm run lint                    # 自动修复代码风格问题
+npm run lint:check             # 仅检查不修复
+npm run format                 # Prettier格式化
+npm run format:check           # 检查格式化状态
+
+# 测试相关
+npm test                       # 运行测试套件（Jest + SuperTest）
+
+# 监控和状态
+npm run monitor                # 增强监控脚本
+npm run status                 # 统一状态检查
+npm run status:detail          # 详细状态信息
+
+# 定价和成本管理
+npm run update:pricing         # 更新模型定价
+npm run init:costs             # 初始化成本配置
+npm run test:pricing-fallback  # 测试定价回退机制
+
+# 数据迁移和维护
+npm run migrate:apikey-expiry  # API Key过期数据迁移
+npm run migrate:fix-usage-stats # 修复使用统计数据
+npm run data:export            # 数据导出
+npm run data:import            # 数据导入
+npm run data:export:sanitized  # 导出清理后的数据
+npm run data:export:enhanced   # 增强数据导出
+npm run data:export:encrypted  # 导出加密数据
+npm run data:debug             # 调试Redis键
+```
+
 # important-instruction-reminders
 
 Do what has been asked; nothing more, nothing less.
 NEVER create files unless they're absolutely necessary for achieving your goal.
 ALWAYS prefer editing an existing file to creating a new one.
 NEVER proactively create documentation files (\*.md) or README files. Only create documentation files if explicitly requested by the User.
+- 不要本地执行npm 命令,我需要到远程 docker 执行
+- 我的代码运行在远程服务器 docker 中,.env 文件也在远端,使用的是docker-compose-online.yaml
+- 不要在本地运行 js 代码.我需要到远端 docker 里测试

@@ -1,0 +1,76 @@
+services:
+  claude-relay:
+    image: weishaw/claude-relay-service:latest
+    container_name: claude-relay-service
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - REDIS_HOST=redis
+      - ADMIN_USERNAME=${ADMIN_USERNAME}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    depends_on:
+      - redis
+  # Webhook Dashboard Reporter (独立服务)
+  webhook-reporter:
+    build: ./webhook-reporter
+    container_name: claude-relay-webhook-reporter
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+      - claude-relay
+    environment:
+      # Redis连接配置（共享主服务的Redis）
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - REDIS_DB=${REDIS_DB:-0}
+      
+      # Webhook配置
+      - DASHBOARD_WEBHOOK_ENABLE=${DASHBOARD_WEBHOOK_ENABLE:-false}
+      - DASHBOARD_WEBHOOK_URL=${DASHBOARD_WEBHOOK_URL:-}
+      - DASHBOARD_WEBHOOK_TYPE=${DASHBOARD_WEBHOOK_TYPE:-slack}
+      - DASHBOARD_WEBHOOK_INTERVAL=${DASHBOARD_WEBHOOK_INTERVAL:-0 */6 * * *}
+      - DASHBOARD_WEBHOOK_TIMEOUT=${DASHBOARD_WEBHOOK_TIMEOUT:-30000}
+      - DASHBOARD_CHART_THEME=${DASHBOARD_CHART_THEME:-light}
+      - DASHBOARD_CHART_WIDTH=${DASHBOARD_CHART_WIDTH:-800}
+      - DASHBOARD_CHART_HEIGHT=${DASHBOARD_CHART_HEIGHT:-400}
+      - DASHBOARD_TREND_DAYS=${DASHBOARD_TREND_DAYS:-7}
+      - DASHBOARD_TOP_API_KEYS=${DASHBOARD_TOP_API_KEYS:-10}
+      - DASHBOARD_SCHEDULE_TIMEZONE=${DASHBOARD_SCHEDULE_TIMEZONE:-Asia/Shanghai}
+      
+      # 飞书图片上传配置
+      - FEISHU_APP_ID=${FEISHU_APP_ID:-}
+      - FEISHU_APP_SECRET=${FEISHU_APP_SECRET:-}
+      
+      # 图表生成控制配置
+      - DASHBOARD_CHART_SYSTEM_OVERVIEW=${DASHBOARD_CHART_SYSTEM_OVERVIEW:-false}
+      - DASHBOARD_CHART_MODEL_DISTRIBUTION=${DASHBOARD_CHART_MODEL_DISTRIBUTION:-false}
+      - DASHBOARD_CHART_USAGE_TREND=${DASHBOARD_CHART_USAGE_TREND:-false}
+      - DASHBOARD_CHART_API_KEYS_TREND=${DASHBOARD_CHART_API_KEYS_TREND:-false}
+      - DASHBOARD_CHART_API_KEY_USAGE=${DASHBOARD_CHART_API_KEY_USAGE:-false}
+      - DASHBOARD_CHART_API_KEY_COST=${DASHBOARD_CHART_API_KEY_COST:-false}
+      - DASHBOARD_CHART_API_KEY_ACTIVITY=${DASHBOARD_CHART_API_KEY_ACTIVITY:-false}
+      
+      # 日志配置
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - NODE_ENV=production
+    volumes:
+      - ./logs:/app/logs  # 共享日志目录
+
+  redis:
+    image: redis:7-alpine
+    container_name: claude-relay-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+
+volumes:
+  redis_data:

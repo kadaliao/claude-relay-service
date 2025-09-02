@@ -1,0 +1,44 @@
+{
+  "name": "claude-relay-webhook-reporter",
+  "version": "1.0.0",
+  "description": "Webhook Dashboard Reporter for Claude Relay Service",
+  "main": "src/app.js",
+  "scripts": {
+    "start": "node src/app.js --daemon",
+    "test": "node src/app.js --test",
+    "once": "node src/app.js --once",
+    "push": "node src/app.js --once",
+    "dry-run": "node src/app.js --once --dry-run",
+    "config": "node src/app.js --config",
+    "health": "node src/health-check.js"
+  },
+  "dependencies": {
+    "canvas": "^2.11.2",
+    "chart.js": "^3.9.1",
+    "chartjs-node-canvas": "^4.1.6",
+    "chartjs-plugin-datalabels": "^2.2.0",
+    "node-cron": "^3.0.3",
+    "axios": "^1.6.0",
+    "ioredis": "^5.3.2",
+    "winston": "^3.10.0",
+    "winston-daily-rotate-file": "^4.7.1",
+    "form-data": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "claude-relay",
+    "webhook",
+    "dashboard",
+    "charts",
+    "monitoring",
+    "reporting"
+  ],
+  "author": "Claude Relay Service",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/claude-relay-service"
+  }
+}
